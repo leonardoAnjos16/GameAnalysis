@@ -14,27 +14,33 @@ def header(type, header):
     else:
         return header
 
-
+# Creates game object with all the important information about the game
 def create_game(path):
     with open(path, 'r') as log_file:
         # Parses CSV into a list of dictionaries
         reader = csv.DictReader(log_file)
 
+        # Extracts team names from first row of CSV
         row = next(reader)
         team_names = []
 
         for side in "lr":
             team_names.append(row[header("team", "name")(side)])
 
+        # Initializes game object
         game = Game(team_names[0], team_names[1])
 
+        # Restarts reader to first row of CSV
         log_file.seek(0)
         reader = csv.DictReader(log_file)
 
+        # Goes through each row in CSV and gather information about teams, ball and players
         for row in reader:
+            # Gets ball current position and velocity
             game.ball.new_position(row[header("ball", "x")], row[header("ball", "y")])
             game.ball.new_velocity(row[header("ball", "vx")], row[header("ball", "vy")])
 
+            # Gets each player current position and velocity
             for side in "lr":
                 team = game.get_team(side)
                 for number in range(1, 12):

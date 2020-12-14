@@ -1,20 +1,61 @@
+import csv
 from math import sqrt
 
+left, right = "l", "r"
+
+# Defines header formatters for specific types of headers (team, ball and player)
+def header(type):
+    if type == "team":
+       return lambda header, side: f"team_{header}_{side}"
+    elif type == "ball":
+        return lambda header: f"ball_{header}"
+    elif type == "player":
+        return lambda header, side, number: f"player_{side}{number}_{header}"
+    else:
+        return header
+
+
 class Game:
-    def __init__(self, left_team_name, right_team_name):
-        self.teams = {
-            "l": Team(left_team_name),
-            "r": Team(right_team_name)
-        }
-
+    def __init__(self, filepath):
         self.ball = Ball()
+        with open(filepath, 'r') as log_file:
+            # Parses CSV into a list of dictionaries
+            reader = csv.DictReader(log_file)
 
+            # Extracts team names from first row of CSV
+            row = next(reader)
+            self.teams = tuple(
+                Team(row[header("team")("name", side)], side)
+                for side in (left, right)
+            )
+
+            # Restarts reader to first row of CSV
+            log_file.seek(0)
+            reader = csv.DictReader(log_file)
+
+            # Goes through each row in CSV and gather information about teams, ball and players
+            for row in reader:
+                # Gets ball current position and velocity
+                ball_header = header("ball")
+                self.ball.new_position(row[ball_header("x")], row[ball_header("y")])
+                self.ball.new_velocity(row[ball_header("vx")], row[ball_header("vy")])
+
+                # Gets each player current position and velocity
+                for side in (left, right):
+                    team = self.get_team(side)
+                    for number in range(1, 12):
+                        player = team.get_player(number)
+                        player_header = header("player")
+                        player.new_position(row[player_header("x", side, number)], row[player_header("y", side, number)])
+                        player.new_velocity(row[player_header("vx", side, number)], row[player_header("vy", side, number)])
+
+    # Returns team given side
     def get_team(self, side):
-        return self.teams[side]
+        return self.teams[0] if side == left else self.teams[1]
 
     # Gets important stats from game
     def get_stats(self):
-        # Get defense/offense ball possession for each team
+        # Gets defense/offense ball possession for each team
         def ball_possession():
             # Checks if player has the ball at show_time
             def player_has_ball(show_time, player):
@@ -24,17 +65,17 @@ class Game:
                 distance = sqrt((player_x - ball_x) ** 2 + (player_y - ball_y) ** 2)
                 return distance <= 4.0
 
-            # Checks if ball is on the defense or offense side ate show_time
+            # Checks if ball is on the defense or offense side at show_time
             def ball_side(show_time, team_side):
                 sides = {
-                    "l": "defense",
-                    "r": "offense"
+                    left: "defense",
+                    right: "offense"
                 }
 
-                if team_side == "r":
-                    sides["l"], sides["r"] = sides["r"], sides["l"]
+                if team_side == right:
+                    sides[left], sides[right] = sides[right], sides[left]
 
-                return sides["l"] if self.ball.positions[show_time][0] <= 0 else sides["r"]
+                return sides[left] if self.ball.positions[show_time][0] <= 0 else sides[right]
 
             # Initializes counters for how many frames each team had the ball on each side of the field
             possession_count = {
@@ -42,7 +83,7 @@ class Game:
                     "defense": 0,
                     "offense": 0
                 }
-                for team in self.teams.values()
+                for team in self.teams
             }
 
             # Updates counters considering which team has the ball on each frame of time
@@ -50,9 +91,9 @@ class Game:
             while show_time < len(self.ball.positions):
                 # Finds which team has the ball on current frame of time
                 has_ball = False
-                for side, team in self.teams.items():
+                for team in self.teams:
                     for player in team.players:
-                        if (player_has_ball(show_time, player)):
+                        if player_has_ball(show_time, player):
                             current_team = team
                             has_ball = True
                             break
@@ -60,8 +101,8 @@ class Game:
                     if has_ball:
                         break
 
-                # Updates counters
-                possession_count[current_team][ball_side(show_time, side)] += 1
+                # Updates counter
+                possession_count[current_team][ball_side(show_time, current_team.side)] += 1
                 show_time += 1
 
             return {
@@ -79,8 +120,9 @@ class Game:
 
 
 class Team:
-    def __init__(self, name):
+    def __init__(self, name, side):
         self.name = name
+        self.side = side
         self.players = [Player(i + 1) for i in range(11)]
         self.goals = 0
 

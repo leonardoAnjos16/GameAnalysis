@@ -12,12 +12,14 @@ def header(type):
     elif type == "player":
         return lambda header, side, number: f"player_{side}{number}_{header}"
     else:
-        return header
+        return type
 
 
 class Game:
     def __init__(self, filepath):
+        self.states = []
         self.ball = Ball()
+
         with open(filepath, 'r') as log_file:
             # Parses CSV into a list of dictionaries
             reader = csv.DictReader(log_file)
@@ -35,10 +37,22 @@ class Game:
 
             # Goes through each row in CSV and gather information about teams, ball and players
             for row in reader:
+                # Adds current game state to array of states
+                show_time = int(row[header("show_time")])
+                playmode = row[header("playmode")]
+
+                if show_time > len(self.states) or self.states[-1] != playmode:
+                    self.states.append(playmode)
+
                 # Gets ball current position and velocity
                 ball_header = header("ball")
                 self.ball.new_position(row[ball_header("x")], row[ball_header("y")])
                 self.ball.new_velocity(row[ball_header("vx")], row[ball_header("vy")])
+
+                # Updates each team score
+                team_header = header("team")
+                for index, side in zip([0, 1], [left, right]):
+                    self.teams[index].goals = row[team_header("score", side)]
 
                 # Gets each player current position and velocity
                 for side in (left, right):
@@ -113,9 +127,26 @@ class Game:
                 for team, counters in possession_count.items()
             }
 
+        # Gets number of fouls commited by each team
+        def calculate_fouls():
+            fouls = { side: 0 for side in (left, right) }
+            for state in self.states:
+                if state.startswith("foul_charge"):
+                    fouls[state[-1]] += 1
+
+            return {
+                self.teams[0]: fouls[left],
+                self.teams[1]: fouls[right]
+            }
+
         # Returns dictionary with all important game stats
         return {
-            "ball_possession": ball_possession()
+            "ball_possession": ball_possession(),
+            "goals": {
+                team: team.goals
+                for team in self.teams
+            },
+            "fouls": calculate_fouls()
         }
 
 

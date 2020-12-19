@@ -9,6 +9,7 @@ def main():
         return
 
     game = Game(sys.argv[1])
+    print(game.get_stats())
 
 
 if __name__ == "__main__":

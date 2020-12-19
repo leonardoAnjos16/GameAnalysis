@@ -38,11 +38,10 @@ class Game:
             # Goes through each row in CSV and gather information about teams, ball and players
             for row in reader:
                 # Adds current game state to array of states
-                show_time = int(row[header("show_time")])
-                playmode = row[header("playmode")]
-
-                if show_time > len(self.states) or self.states[-1] != playmode:
-                    self.states.append(playmode)
+                self.states.append({
+                    "show_time": int(row[header("show_time")]),
+                    "playmode": row[header("playmode")]
+                })
 
                 # Gets ball current position and velocity
                 ball_header = header("ball")
@@ -71,16 +70,16 @@ class Game:
     def get_stats(self):
         # Gets defense/offense ball possession for each team
         def ball_possession():
-            # Checks if player has the ball at show_time
-            def player_has_ball(show_time, player):
-                player_x, player_y = player.positions[show_time]
-                ball_x, ball_y = self.ball.positions[show_time]
+            # Checks if player has the ball at given frame
+            def player_has_ball(frame, player):
+                player_x, player_y = player.positions[frame]
+                ball_x, ball_y = self.ball.positions[frame]
 
                 distance = sqrt((player_x - ball_x) ** 2 + (player_y - ball_y) ** 2)
                 return distance <= 4.0
 
-            # Checks if ball is on the defense or offense side at show_time
-            def ball_side(show_time, team_side):
+            # Checks if ball is on the defense or offense side at given frame
+            def ball_side(frame, team_side):
                 sides = {
                     left: "defense",
                     right: "offense"
@@ -89,7 +88,7 @@ class Game:
                 if team_side == right:
                     sides[left], sides[right] = sides[right], sides[left]
 
-                return sides[left] if self.ball.positions[show_time][0] <= 0 else sides[right]
+                return sides[left] if self.ball.positions[frame][0] <= 0 else sides[right]
 
             # Initializes counters for how many frames each team had the ball on each side of the field
             possession_count = {
@@ -101,27 +100,31 @@ class Game:
             }
 
             # Updates counters considering which team has the ball on each frame of time
-            show_time = 0
-            while show_time < len(self.ball.positions):
-                # Finds which team has the ball on current frame of time
+            num_frames = 0
+            for frame in range(len(self.states)):
+                # Makes sure game clock is running
+                if self.states[frame]["playmode"].startswith("foul_charge"):
+                    continue
+
+                # Finds which team has the ball on current frame
                 has_ball = False
                 for team in self.teams:
                     for player in team.players:
-                        if player_has_ball(show_time, player):
+                        if player_has_ball(frame, player):
                             current_team = team
                             has_ball = True
                             break
-
+                    
                     if has_ball:
                         break
 
                 # Updates counter
-                possession_count[current_team][ball_side(show_time, current_team.side)] += 1
-                show_time += 1
+                possession_count[current_team][ball_side(frame, current_team.side)] += 1
+                num_frames += 1
 
             return {
                 team: {
-                    side: count / show_time * 100
+                    side: count / num_frames * 100
                     for side, count in counters.items()
                 }
                 for team, counters in possession_count.items()
@@ -130,9 +133,14 @@ class Game:
         # Gets number of fouls commited by each team
         def calculate_fouls():
             fouls = { side: 0 for side in (left, right) }
+            last_show_time, last_playmode = 0, ""
+
             for state in self.states:
-                if state.startswith("foul_charge"):
-                    fouls[state[-1]] += 1
+                show_time, playmode = state["show_time"], state["playmode"]
+                if playmode.startswith("foul_charge") and (show_time > last_show_time or playmode != last_playmode):
+                    fouls[playmode[-1]] += 1
+
+                last_show_time, last_playmode = show_time, playmode
 
             return {
                 self.teams[0]: fouls[left],

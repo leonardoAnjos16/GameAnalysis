@@ -43,24 +43,24 @@ class Game:
                     "playmode": row[header("playmode")]
                 })
 
-                # Gets ball current position and velocity
+                # Gets ball current position
                 ball_header = header("ball")
                 self.ball.new_position(row[ball_header("x")], row[ball_header("y")])
-                self.ball.new_velocity(row[ball_header("vx")], row[ball_header("vy")])
 
                 # Updates each team score
                 team_header = header("team")
                 for index, side in zip([0, 1], [left, right]):
                     self.teams[index].goals = row[team_header("score", side)]
 
-                # Gets each player current position and velocity
+                # Updates each player information
                 for side in (left, right):
                     team = self.get_team(side)
                     for number in range(1, 12):
                         player = team.get_player(number)
                         player_header = header("player")
+
                         player.new_position(row[player_header("x", side, number)], row[player_header("y", side, number)])
-                        player.new_velocity(row[player_header("vx", side, number)], row[player_header("vy", side, number)])
+                        player.tackles = int(row[player_header("counting_tackle", side, number)])
 
     # Returns team given side
     def get_team(self, side):
@@ -154,7 +154,11 @@ class Game:
                 team: team.goals
                 for team in self.teams
             },
-            "fouls": calculate_fouls()
+            "fouls": calculate_fouls(),
+            "tackles": {
+                team: team.get_tackles()
+                for team in self.teams
+            }
         }
 
 
@@ -177,27 +181,23 @@ class Team:
     def get_player(self, number):
         return self.players[number - 1]
 
+    def get_tackles(self):
+        return sum([player.tackles for player in self.players])
+
 
 class Ball:
     def __init__(self):
         self.positions = []
-        self.velocities = []
 
     def new_position(self, x, y):
         self.positions.append((float(x), float(y)))
-
-    def new_velocity(self, vx, vy):
-        self.velocities.append((float(vx), float(vy)))
 
 
 class Player:
     def __init__(self, number):
         self.number = number
         self.positions = []
-        self.velocities = []
+        self.tackles = 0
 
     def new_position(self, x, y):
         self.positions.append((float(x), float(y)))
-
-    def new_velocity(self, vx, vy):
-        self.velocities.append((float(vx), float(vy)))

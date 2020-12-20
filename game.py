@@ -149,7 +149,7 @@ class Game:
             return {
                 team: {
                     side: count / num_frames * 100
-                    for side, count in counters.items()
+                    for side, count in counters.items(),
                 }
                 for team, counters in possession_count.items()
             }

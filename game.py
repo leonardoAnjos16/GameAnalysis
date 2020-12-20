@@ -61,6 +61,7 @@ class Game:
 
                         player.new_position(row[player_header("x", side, number)], row[player_header("y", side, number)])
                         player.tackles = int(row[player_header("counting_tackle", side, number)])
+                        player.kicks = int(row[player_header("counting_kick", side, number)])
 
     # Returns team given side
     def get_team(self, side):
@@ -68,6 +69,29 @@ class Game:
 
     # Gets important stats from game
     def get_stats(self):
+        # Checks if game clock is running at given frame
+        def is_clock_running(frame):
+            return frame == 0 or self.states[frame]["show_time"] > self.states[frame - 1]["show_time"]
+
+        # Gets game states without repetition
+        def filtered_states():
+            if not hasattr(filtered_states, "states"):
+                filtered_states.states = []
+                for state in self.states:
+                    if state["show_time"] > len(filtered_states.states):
+                        filtered_states.states.append(state["playmode"])
+                    elif state["playmode"] != filtered_states.states[-1]:
+                        filtered_states.states[-1] = state["playmode"]
+
+            return filtered_states.states
+        
+        # Gets number of states that match given state for each team
+        def count_states(state):
+            return {
+                self.teams[0]: filtered_states().count(f"{state}_{left}"),
+                self.teams[1]: filtered_states().count(f"{state}_{right}"),
+            }
+        
         # Gets defense/offense ball possession for each team
         def ball_possession():
             # Checks if player has the ball at given frame
@@ -103,7 +127,7 @@ class Game:
             num_frames = 0
             for frame in range(len(self.states)):
                 # Makes sure game clock is running
-                if self.states[frame]["playmode"].startswith("foul_charge"):
+                if not is_clock_running(frame):
                     continue
 
                 # Finds which team has the ball on current frame
@@ -130,31 +154,28 @@ class Game:
                 for team, counters in possession_count.items()
             }
 
-        # Gets number of fouls commited by each team
-        def calculate_fouls():
-            fouls = { side: 0 for side in (left, right) }
-            last_show_time, last_playmode = 0, ""
+        # Gets number of goal kicks by each team
+        def goal_kicks():
+            counters = { side: 0 for side in (left, right) }
 
-            for state in self.states:
-                show_time, playmode = state["show_time"], state["playmode"]
-                if playmode.startswith("foul_charge") and (show_time > last_show_time or playmode != last_playmode):
-                    fouls[playmode[-1]] += 1
+            last_state = ""
+            for state in filtered_states():
+                if state.startswith("goal_kick") and state != last_state:
+                    counters[state[-1]] += 1
 
-                last_show_time, last_playmode = show_time, playmode
+                last_state = state
 
             return {
-                self.teams[0]: fouls[left],
-                self.teams[1]: fouls[right]
+                self.teams[0]: counters[left],
+                self.teams[1]: counters[right]
             }
-
+        
         # Returns dictionary with all important game stats
         return {
+            "goals": count_states("goal"),
+            "goal_kicks": goal_kicks(),
+            "fouls": count_states("foul_charge"),
             "ball_possession": ball_possession(),
-            "goals": {
-                team: team.goals
-                for team in self.teams
-            },
-            "fouls": calculate_fouls(),
             "tackles": {
                 team: team.get_tackles()
                 for team in self.teams

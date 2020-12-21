@@ -75,15 +75,47 @@ class Game:
 
         # Gets game states without repetition
         def filtered_states():
-            if not hasattr(filtered_states, "states"):
-                filtered_states.states = []
+            if not hasattr(filtered_states, "output"):
+                filtered_states.output = []
                 for state in self.states:
-                    if state["show_time"] > len(filtered_states.states):
-                        filtered_states.states.append(state["playmode"])
-                    elif state["playmode"] != filtered_states.states[-1]:
-                        filtered_states.states[-1] = state["playmode"]
+                    if state["show_time"] > len(filtered_states.output):
+                        filtered_states.output.append(state["playmode"])
+                    elif state["playmode"] != filtered_states.output[-1]:
+                        filtered_states.output[-1] = state["playmode"]
 
-            return filtered_states.states
+            return filtered_states.output
+        
+        # Gets player that has the ball on each frame of time
+        def player_with_ball():
+            # Checks if player has the ball at given frame
+            def player_has_ball(frame, player):
+                player_x, player_y = player.positions[frame]
+                ball_x, ball_y = self.ball.positions[frame]
+
+                distance = sqrt((player_x - ball_x) ** 2 + (player_y - ball_y) ** 2)
+                return distance <= 4.0
+            
+            if not hasattr(player_with_ball, "output"):
+                player_with_ball.output = []
+                for frame in range(len(self.states)):
+                    if not is_clock_running(frame):
+                        player_with_ball.output.append(None)
+                        continue
+
+                    has_ball = False
+                    for team in self.teams:
+                        for player in team.players:
+                            if player_has_ball(frame, player):
+                                current = (team, player)
+                                has_ball = True
+                                break
+
+                        if has_ball:
+                            break
+
+                    player_with_ball.output.append(current)
+
+            return player_with_ball.output
         
         # Gets number of states that match given state for each team
         def count_states(state):
@@ -94,14 +126,6 @@ class Game:
         
         # Gets defense/offense ball possession for each team
         def ball_possession():
-            # Checks if player has the ball at given frame
-            def player_has_ball(frame, player):
-                player_x, player_y = player.positions[frame]
-                ball_x, ball_y = self.ball.positions[frame]
-
-                distance = sqrt((player_x - ball_x) ** 2 + (player_y - ball_y) ** 2)
-                return distance <= 4.0
-
             # Checks if ball is on the defense or offense side at given frame
             def ball_side(frame, team_side):
                 sides = {
@@ -123,51 +147,57 @@ class Game:
                 for team in self.teams
             }
 
-            # Updates counters considering which team has the ball on each frame of time
             num_frames = 0
-            for frame in range(len(self.states)):
-                # Makes sure game clock is running
-                if not is_clock_running(frame):
+            for frame in range(len(player_with_ball())):
+                if player_with_ball()[frame] is None:
                     continue
 
-                # Finds which team has the ball on current frame
-                has_ball = False
-                for team in self.teams:
-                    for player in team.players:
-                        if player_has_ball(frame, player):
-                            current_team = team
-                            has_ball = True
-                            break
-                    
-                    if has_ball:
-                        break
-
-                # Updates counter
-                possession_count[current_team][ball_side(frame, current_team.side)] += 1
+                team = player_with_ball()[frame][0]
+                possession_count[team][ball_side(frame, team.side)] += 1
                 num_frames += 1
 
             return {
                 team: {
                     side: count / num_frames * 100
-                    for side, count in counters.items(),
+                    for side, count in counters.items()
                 }
                 for team, counters in possession_count.items()
             }
 
         # Gets number of goal kicks by each team
         def goal_kicks():
-            counters = { side: 0 for side in (left, right) }
+            goal_kick_count = { side: 0 for side in (left, right) }
 
             last_state = ""
             for state in filtered_states():
                 if state.startswith("goal_kick") and state != last_state:
-                    counters[state[-1]] += 1
+                    goal_kick_count[state[-1]] += 1
 
                 last_state = state
 
             return {
-                self.teams[0]: counters[left],
-                self.teams[1]: counters[right]
+                self.teams[0]: goal_kick_count[left],
+                self.teams[1]: goal_kick_count[right]
+            }
+        
+        # Gets percentage of successful passes of each team
+        def successful_passes():
+            passes_count = { team: { "success": 0, "total": 0 } for team in self.teams }
+            for i in range(1, len(player_with_ball())):
+                last = player_with_ball()[i - 1]
+                current = player_with_ball()[i]
+
+                if last is None or current is None:
+                    continue
+
+                if current[1] != last[1]:
+                    passes_count[last[0]]["total"] += 1
+                    if current[0] == last[0]:
+                        passes_count[current[0]]["success"] += 1
+
+            return {
+                team: counters["success"] / counters["total"] * 100
+                for team, counters in passes_count.items()
             }
         
         # Returns dictionary with all important game stats
@@ -176,6 +206,7 @@ class Game:
             "goal_kicks": goal_kicks(),
             "fouls": count_states("foul_charge"),
             "ball_possession": ball_possession(),
+            "successful_passes": successful_passes(),
             "tackles": {
                 team: team.get_tackles()
                 for team in self.teams
